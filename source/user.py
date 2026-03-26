@@ -91,6 +91,11 @@ class User:
             language="en",  # Language of the conversation (default: "en")
             silero_speaker="None",  # Silero speaker model (for text-to-speech)
             silero_model_id="None",  # Silero model ID (for text-to-speech)
+            tts_engine="silero",  # TTS engine: silero | chatterbox | none
+            voice_clone_path="",  # Path to voice clone reference audio
+            narrator_voice_path="",  # Path to narrator voice clone reference audio
+            voice_map=None,  # Character voice map (name -> path)
+            awaiting_voice_clone_type="",  # pending type: default|narrator|char:<name>
             turn_template="",  # Template for formatting conversation turns
             greeting="Hello.",  # Initial greeting message from the bot (default: "Hello.")
     ):
@@ -112,11 +117,19 @@ class User:
         self.language: str = language  # Conversation language
         self.silero_speaker: str = silero_speaker  # Silero speaker model
         self.silero_model_id: str = silero_model_id  # Silero model ID
+        self.tts_engine: str = tts_engine  # TTS engine
+        self.voice_clone_path: str = voice_clone_path  # Voice clone reference path
+        self.narrator_voice_path: str = narrator_voice_path  # Narrator voice reference path
+        self.voice_map: Dict[str, str] = voice_map if isinstance(voice_map, dict) else {}
+        self.awaiting_voice_clone_type: str = awaiting_voice_clone_type
         self.turn_template: str = turn_template  # Turn template
         self.messages: List[Msg] = []  # List of all message exchanges
         self.greeting: str = greeting  # "hello" or something
         self.alternate_greetings = []  # List of alternative greetings
         self.last_msg_timestamp: int = 0  # last message timestamp to avoid message flood.
+        self.awaiting_voice_clone: bool = False  # runtime flag for setting voice clone
+        self.voice_prompted = set()
+        self.narrator_prompted = False
 
     def __or__(self, arg):
         return arg
@@ -268,6 +281,11 @@ class User:
                 "language": self.language,
                 "silero_speaker": self.silero_speaker,
                 "silero_model_id": self.silero_model_id,
+                "tts_engine": self.tts_engine,
+                "voice_clone_path": self.voice_clone_path,
+                "narrator_voice_path": self.narrator_voice_path,
+                "voice_map": self.voice_map,
+                "awaiting_voice_clone_type": self.awaiting_voice_clone_type,
                 "turn_template": self.turn_template,
                 "messages": [msg.to_dict() for msg in self.messages],
                 "greeting": self.greeting,
@@ -313,6 +331,11 @@ class User:
             self.language = data.get("language", "en")
             self.silero_speaker = data.get("silero_speaker", "None")
             self.silero_model_id = data.get("silero_model_id", "None")
+            self.tts_engine = data.get("tts_engine", "silero")
+            self.voice_clone_path = data.get("voice_clone_path", "")
+            self.narrator_voice_path = data.get("narrator_voice_path", "")
+            self.voice_map = data.get("voice_map", {}) if isinstance(data.get("voice_map", {}), dict) else {}
+            self.awaiting_voice_clone_type = data.get("awaiting_voice_clone_type", "")
             self.turn_template = data.get("turn_template", "")
             self.messages = [Msg.from_dict(msg_dct) for msg_dct in data.get("messages", [])]
             self.greeting = data.get("greeting", "Hello.")

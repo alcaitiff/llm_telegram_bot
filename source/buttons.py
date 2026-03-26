@@ -24,13 +24,15 @@ def get_options_keyboard(chat_id, user: User):
     language_flag = cfg.language_dict[language]
     # get voice
     if user is not None:
-        voice_str = user.silero_speaker
+        tts_engine = getattr(user, "tts_engine", "silero")
+        if tts_engine == "chatterbox":
+            voice = "🔈" if getattr(user, "voice_clone_path", "") else "🔇"
+        elif tts_engine == "silero":
+            voice = "🔈" if user.silero_speaker != "None" else "🔇"
+        else:
+            voice = "🔇"
     else:
-        voice_str = "None"
-    if voice_str == "None":
         voice = "🔇"
-    else:
-        voice = "🔈"
 
     if utils.check_user_rule(chat_id, const.BTN_DOWNLOAD):
         keyboard_raw.append({"text": "💾Save", "callback_data": const.BTN_DOWNLOAD})

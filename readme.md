@@ -85,6 +85,7 @@ FEATURES:
 - integrated auto-translate (you can set model/user language parameter) 
 - receiving text files (code, text, etc)
 - voice generating ([silero](https://github.com/snakers4/silero-models)), en and ru variants
+- voice cloning TTS ([Chatterbox Multilingual](https://github.com/resemble-ai/chatterbox)) via Voice menu -> Clone or `/voice_clone` (send 5-15s reference audio)
 - translation_as_hidden_text option in .cfg - if you want to learn english with bot
 - telegram_users.txt - list of permitted users (if empty - permit for all)
 - antiflood - one message per 15 sec from one user

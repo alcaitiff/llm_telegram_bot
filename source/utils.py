@@ -239,12 +239,22 @@ def get_conversation_info(user: User):
 
     max_token_param = "truncation_length"
     max_tokens = cfg.generation_params[max_token_param] if max_token_param in cfg.generation_params else "???"
+    tts_engine = getattr(user, "tts_engine", "silero")
+    if tts_engine == "chatterbox":
+        clone_status = "set" if getattr(user, "voice_clone_path", "") else "unset"
+        narrator_status = "set" if getattr(user, "narrator_voice_path", "") else "unset"
+        voice_count = len(getattr(user, "voice_map", {}) or {})
+        voice_status = f"Clone ({clone_status}), Narrator ({narrator_status}), Characters ({voice_count})"
+    elif tts_engine == "silero":
+        voice_status = user.silero_speaker
+    else:
+        voice_status = "None"
     return (
         f"{user.name2}\n"
         f"Conversation length {str(conversation_tokens)}/{max_tokens} tokens.\n"
         f"(context {(str(context_tokens))}, "
         f"greeting {(str(greeting_tokens))}, "
         f"messages {(str(history_tokens))})\n"
-        f"Voice: {user.silero_speaker}\n"
+        f"Voice: {voice_status}\n"
         f"Language: {user.language}"
     )

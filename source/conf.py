@@ -67,6 +67,7 @@ class Config(BaseModel):
             "tr": "🇹🇷",
             "it": "🇮🇹",
             "hi": "🇮🇳",
+            "pt": "🇧🇷",
             "zh-CN": "🇨🇳",
             "ar": "🇸🇾",
         },

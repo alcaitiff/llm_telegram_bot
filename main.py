@@ -3,6 +3,10 @@ import logging
 import asyncio
 import os
 import random
+import re
+import time
+import shutil
+import mimetypes
 from os.path import exists, normpath
 from os import remove
 from pathlib import Path
@@ -15,12 +19,16 @@ from aiogram import Bot, types
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.dispatcher.dispatcher import Dispatcher
-from aiogram.types.input_file import InputFile, BufferedInputFile
+from aiogram.types.input_file import BufferedInputFile
 from aiogram.types.input_media_audio import InputMediaAudio
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters.command import Command
 
 logging.basicConfig(level=logging.INFO)
+
+TELEGRAM_CAPTION_LIMIT = 1024
+TTS_CHUNK_MAX_CHARS = 500
+TTS_MAX_CHARACTER_NAME = 64
 
 try:
     import extensions.telegram_bot.source.text_process as tp
@@ -30,6 +38,7 @@ try:
     from extensions.telegram_bot.source.conf import cfg
     from extensions.telegram_bot.source.user import User as User
     from extensions.telegram_bot.source.extension.silero import Silero as Silero
+    from extensions.telegram_bot.source.extension.chatterbox_tts import ChatterboxTTS as ChatterboxTTS
     from extensions.telegram_bot.source.extension.sd_api import SdApi as SdApi
 except ImportError:
     import source.text_process as tp
@@ -39,6 +48,7 @@ except ImportError:
     from source.conf import cfg
     from source.user import User as User
     from source.extension.silero import Silero as Silero
+    from source.extension.chatterbox_tts import ChatterboxTTS as ChatterboxTTS
     from source.extension.sd_api import SdApi as SdApi
 
 
@@ -61,6 +71,8 @@ class AiogramLlmBot:
         cfg.load(self.config_file_path)
         # Silero initiate
         self.silero = Silero()
+        # Chatterbox initiate
+        self.chatterbox = ChatterboxTTS()
         # SdApi initiate
         self.SdApi = SdApi(cfg.sd_api_url, cfg.sd_config_file_path)
         # Load user rules
@@ -102,6 +114,9 @@ class AiogramLlmBot:
         self.bot = Bot(token=bot_token, session=session)
         self.dp = Dispatcher()
         self.dp.message.register(self.thread_welcome_message, Command("start"))
+        self.dp.message.register(self.thread_voice_clone_command, Command("voice_clone"))
+        self.dp.message.register(self.thread_voice_narrator_command, Command("voice_narrator"))
+        self.dp.message.register(self.thread_voice_character_command, Command("voice_char"))
         self.dp.message.register(self.thread_get_message)
         self.dp.message.register(self.thread_get_document)
         self.dp.callback_query.register(self.thread_push_button)
@@ -224,27 +239,160 @@ class AiogramLlmBot:
     async def send_message(self, chat_id: int, text: str) -> Message:
         user = self.users[chat_id]
         text = await utils.prepare_text(text, user, "to_user")
-        if user.silero_speaker == "None" or user.silero_model_id == "None":
-            message = await self.bot.send_message(
-                text=text,
-                chat_id=chat_id,
-                parse_mode="HTML",
-                reply_markup=self.get_chat_keyboard(chat_id, True),
-            )
-        else:
+        tts_engine = getattr(user, "tts_engine", "silero")
+        logging.info(
+            "TTS send_message start: engine=%s user=%s voice_clone_path=%s silero_speaker=%s",
+            tts_engine,
+            chat_id,
+            getattr(user, "voice_clone_path", None),
+            user.silero_speaker,
+        )
+        if tts_engine == "chatterbox":
             if ":" in text:
                 audio_text = ":".join(text.split(":")[1:])
             else:
                 audio_text = text
-            audio_path = await self.silero.get_audio(text=audio_text, user_id=chat_id, user=user)
-            if audio_path is not None:
-                message = await self.bot.send_audio(
+            voice_clone_path = getattr(user, "voice_clone_path", None)
+            has_any_voice = bool(voice_clone_path) or bool(getattr(user, "narrator_voice_path", None)) or bool(
+                getattr(user, "voice_map", {})
+            )
+            logging.info(
+                "TTS chatterbox: voice_clone_path=%s exists=%s",
+                voice_clone_path,
+                os.path.exists(voice_clone_path) if voice_clone_path else False,
+            )
+            if not has_any_voice:
+                logging.warning("TTS chatterbox: no voice references set for user=%s", chat_id)
+                if getattr(user, "awaiting_voice_clone", False):
+                    await self.bot.send_message(
+                        text="Voice cloning is enabled, but no reference audio is set. "
+                        "Send /voice_clone and then upload a short voice/audio clip.",
+                        chat_id=chat_id,
+                    )
+                message = await self.bot.send_message(
+                    text=text,
                     chat_id=chat_id,
-                    audio=FSInputFile(audio_path),
-                    caption=text,
                     parse_mode="HTML",
                     reply_markup=self.get_chat_keyboard(chat_id, True),
                 )
+            else:
+                segments = self.parse_tts_segments(audio_text, user)
+                missing_characters = []
+                for seg in segments:
+                    if seg["label"] and seg["label"].lower() not in user.voice_map:
+                        missing_characters.append(seg["label"])
+                for name in sorted(set(missing_characters)):
+                    if name.lower() not in user.voice_prompted:
+                        user.voice_prompted.add(name.lower())
+                        await self.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"No voice set for '{name}'. Send /voice_char {name} to assign one.",
+                        )
+                if any(seg.get("label") == "Narrator" for seg in segments):
+                    if not user.narrator_voice_path and not user.narrator_prompted:
+                        user.narrator_prompted = True
+                        await self.bot.send_message(
+                            chat_id=chat_id,
+                            text="No narrator voice set. Send /voice_narrator to assign one.",
+                        )
+
+                send_text_separately = len(text) > TELEGRAM_CAPTION_LIMIT
+                audio_paths = []
+                for seg in segments:
+                    chunks = self.split_tts_text(seg["text"])
+                    for chunk in chunks:
+                        audio_path = await self.chatterbox.get_audio(
+                            text=chunk,
+                            user_id=chat_id,
+                            user=user,
+                            voice_path=seg["voice_path"],
+                        )
+                        logging.info("TTS chatterbox: audio_path=%s user=%s", audio_path, chat_id)
+                        if audio_path is None:
+                            continue
+                        audio_paths.append(audio_path)
+
+                if audio_paths:
+                    merged_path = self.concat_audio_paths(
+                        audio_paths,
+                        os.path.join(
+                            cfg.history_dir_path,
+                            "tts_audio",
+                            f"{chat_id}_chatterbox_full_{int(time.time()*1000)}.wav",
+                        ),
+                    )
+                    caption = None if send_text_separately else text
+                    message = await self.bot.send_audio(
+                        chat_id=chat_id,
+                        audio=FSInputFile(merged_path),
+                        caption=caption,
+                        parse_mode="HTML" if caption else None,
+                        reply_markup=self.get_chat_keyboard(chat_id, True),
+                    )
+                    if send_text_separately:
+                        await self.bot.send_message(
+                            text=text,
+                            chat_id=chat_id,
+                            parse_mode="HTML",
+                            reply_markup=self.get_chat_keyboard(chat_id, True),
+                        )
+                else:
+                    message = await self.bot.send_message(
+                        text=text,
+                        chat_id=chat_id,
+                        parse_mode="HTML",
+                        reply_markup=self.get_chat_keyboard(chat_id, True),
+                    )
+        elif tts_engine == "silero" and user.silero_speaker != "None" and user.silero_model_id != "None":
+            if ":" in text:
+                audio_text = ":".join(text.split(":")[1:])
+            else:
+                audio_text = text
+            chunks = self.split_tts_text(audio_text)
+            logging.info(
+                "TTS silero: generating %s chunk(s) for user=%s",
+                len(chunks),
+                chat_id,
+            )
+            send_text_separately = len(text) > TELEGRAM_CAPTION_LIMIT
+            audio_paths = []
+            for idx, chunk in enumerate(chunks, start=1):
+                logging.info(
+                    "TTS silero: generating chunk %s/%s for user=%s len=%s",
+                    idx,
+                    len(chunks),
+                    chat_id,
+                    len(chunk),
+                )
+                audio_path = await self.silero.get_audio(text=chunk, user_id=chat_id, user=user)
+                logging.info("TTS silero: audio_path=%s user=%s", audio_path, chat_id)
+                if audio_path is None:
+                    continue
+                audio_paths.append(audio_path)
+            if audio_paths:
+                merged_path = self.concat_audio_paths(
+                    audio_paths,
+                    os.path.join(
+                        cfg.history_dir_path,
+                        "tts_audio",
+                        f"{chat_id}_silero_full_{int(time.time()*1000)}.wav",
+                    ),
+                )
+                caption = None if send_text_separately else text
+                message = await self.bot.send_audio(
+                    chat_id=chat_id,
+                    audio=FSInputFile(merged_path),
+                    caption=caption,
+                    parse_mode="HTML" if caption else None,
+                    reply_markup=self.get_chat_keyboard(chat_id, True),
+                )
+                if send_text_separately:
+                    await self.bot.send_message(
+                        text=text,
+                        chat_id=chat_id,
+                        parse_mode="HTML",
+                        reply_markup=self.get_chat_keyboard(chat_id, True),
+                    )
             else:
                 message = await self.bot.send_message(
                     text=text,
@@ -252,6 +400,13 @@ class AiogramLlmBot:
                     parse_mode="HTML",
                     reply_markup=self.get_chat_keyboard(chat_id, True),
                 )
+        else:
+            message = await self.bot.send_message(
+                text=text,
+                chat_id=chat_id,
+                parse_mode="HTML",
+                reply_markup=self.get_chat_keyboard(chat_id, True),
+            )
         return message
 
     @backoff.on_exception(
@@ -268,6 +423,7 @@ class AiogramLlmBot:
     ):
         user = self.users[chat_id]
         text = await utils.prepare_text(text, user, "to_user")
+        logging.info("TTS edit_message start: user=%s", chat_id)
         if cbq.message.text is not None:
             await self.bot.edit_message_text(
                 text=text,
@@ -276,12 +432,20 @@ class AiogramLlmBot:
                 message_id=message_id,
                 reply_markup=self.get_chat_keyboard(chat_id),
             )
-        if cbq.message.audio is not None and user.silero_speaker != "None" and user.silero_model_id != "None":
+        if cbq.message.audio is not None:
             if ":" in text:
                 audio_text = ":".join(text.split(":")[1:])
             else:
                 audio_text = text
-            audio_path = await self.silero.get_audio(text=audio_text, user_id=chat_id, user=user)
+            tts_engine = getattr(user, "tts_engine", "silero")
+            audio_path = None
+            if tts_engine == "chatterbox" and getattr(user, "voice_clone_path", None):
+                logging.info("TTS edit chatterbox: generating audio for user=%s", chat_id)
+                audio_path = await self.chatterbox.get_audio(text=audio_text, user_id=chat_id, user=user)
+            elif tts_engine == "silero" and user.silero_speaker != "None" and user.silero_model_id != "None":
+                logging.info("TTS edit silero: generating audio for user=%s", chat_id)
+                audio_path = await self.silero.get_audio(text=audio_text, user_id=chat_id, user=user)
+            logging.info("TTS edit: audio_path=%s user=%s", audio_path, chat_id)
             if audio_path is not None:
                 await self.bot.edit_message_media(
                     chat_id=chat_id,
@@ -290,13 +454,31 @@ class AiogramLlmBot:
                     reply_markup=self.get_chat_keyboard(chat_id),
                 )
         if cbq.message.caption is not None:
-            await self.bot.edit_message_caption(
-                chat_id=chat_id,
-                caption=text,
-                parse_mode="HTML",
-                message_id=message_id,
-                reply_markup=self.get_chat_keyboard(chat_id),
-            )
+            if len(text) > TELEGRAM_CAPTION_LIMIT:
+                logging.warning(
+                    "TTS edit_message: caption too long (%s). Sending full text separately.",
+                    len(text),
+                )
+                await self.bot.edit_message_caption(
+                    chat_id=chat_id,
+                    caption="⬇ Full text sent below (caption too long)",
+                    message_id=message_id,
+                    reply_markup=self.get_chat_keyboard(chat_id),
+                )
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=self.get_chat_keyboard(chat_id),
+                )
+            else:
+                await self.bot.edit_message_caption(
+                    chat_id=chat_id,
+                    caption=text,
+                    parse_mode="HTML",
+                    message_id=message_id,
+                    reply_markup=self.get_chat_keyboard(chat_id),
+                )
 
     # =============================================================================
     # Message handler
@@ -304,6 +486,18 @@ class AiogramLlmBot:
         if message.document is None:
             return
         if message.document.file_size > 16000000:
+            return
+        is_audio_doc = False
+        if message.document.mime_type and message.document.mime_type.startswith("audio/"):
+            is_audio_doc = True
+        if message.document.file_name:
+            ext = message.document.file_name.rsplit(".", 1)[-1].lower()
+            if ext in {"wav", "mp3", "ogg", "opus", "flac", "m4a"}:
+                is_audio_doc = True
+        if is_audio_doc:
+            handled = await self.thread_get_voice_reference(message)
+            if handled:
+                return
             return
         print("thread_get_document2")
         file_id = message.document.file_id
@@ -319,6 +513,140 @@ class AiogramLlmBot:
             await self.get_json_save_file(message, text_content, file_name)
         else:
             await self.add_document_to_context(message, text_content, file_name)
+
+    async def thread_voice_clone_command(self, message: types.Message):
+        chat_id = message.chat.id
+        if not utils.check_user_permission(chat_id):
+            return False
+        utils.init_check_user(self.users, chat_id)
+        user = self.users[chat_id]
+        user.tts_engine = "chatterbox"
+        user.awaiting_voice_clone = True
+        user.awaiting_voice_clone_type = "default"
+        await message.reply(
+            "Voice cloning enabled. Please send a short voice/audio clip (5-15 seconds) "
+            "to set the reference voice."
+        )
+        return True
+
+    async def thread_voice_narrator_command(self, message: types.Message):
+        chat_id = message.chat.id
+        if not utils.check_user_permission(chat_id):
+            return False
+        utils.init_check_user(self.users, chat_id)
+        user = self.users[chat_id]
+        user.tts_engine = "chatterbox"
+        user.awaiting_voice_clone = True
+        user.awaiting_voice_clone_type = "narrator"
+        await message.reply(
+            "Narrator voice setup. Send a short voice/audio clip (5-15 seconds) "
+            "to set the narrator voice."
+        )
+        return True
+
+    async def thread_voice_character_command(self, message: types.Message):
+        chat_id = message.chat.id
+        if not utils.check_user_permission(chat_id):
+            return False
+        utils.init_check_user(self.users, chat_id)
+        user = self.users[chat_id]
+        text = message.text or ""
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.reply("Usage: /voice_char <Character Name>")
+            return True
+        char_name = parts[1].strip()
+        if len(char_name) > TTS_MAX_CHARACTER_NAME:
+            char_name = char_name[:TTS_MAX_CHARACTER_NAME]
+        user.tts_engine = "chatterbox"
+        user.awaiting_voice_clone = True
+        user.awaiting_voice_clone_type = f"char:{char_name}"
+        await message.reply(
+            f"Voice setup for '{char_name}'. Send a short voice/audio clip (5-15 seconds)."
+        )
+        return True
+
+    async def thread_get_voice_reference(self, message: types.Message) -> bool:
+        chat_id = message.chat.id
+        if not utils.check_user_permission(chat_id):
+            return False
+        utils.init_check_user(self.users, chat_id)
+        user = self.users[chat_id]
+        if not getattr(user, "awaiting_voice_clone", False):
+            return False
+
+        file_id = None
+        file_name = None
+        mime_type = None
+        if message.voice is not None:
+            file_id = message.voice.file_id
+            mime_type = message.voice.mime_type
+        elif message.audio is not None:
+            file_id = message.audio.file_id
+            file_name = message.audio.file_name
+            mime_type = message.audio.mime_type
+        elif message.document is not None:
+            file_id = message.document.file_id
+            file_name = message.document.file_name
+            mime_type = message.document.mime_type
+        else:
+            return False
+
+        ext = None
+        if file_name and "." in file_name:
+            ext = file_name.rsplit(".", 1)[1].lower()
+        if not ext and mime_type:
+            ext = mimetypes.guess_extension(mime_type) or ""
+            ext = ext.lstrip(".")
+        if not ext:
+            ext = "ogg"
+
+        ref_dir = Path(cfg.history_dir_path) / "voice_refs"
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        raw_path = ref_dir / f"{chat_id}_ref.{ext}"
+        file_content = await self.bot.download(file_id)
+        with raw_path.open("wb") as ref_file:
+            ref_file.write(file_content.read())
+
+        final_path = raw_path
+        if ext != "wav" and shutil.which("ffmpeg"):
+            wav_path = ref_dir / f"{chat_id}_ref.wav"
+            try:
+                import subprocess
+
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(raw_path), "-ac", "1", "-ar", "48000", str(wav_path)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                final_path = wav_path
+            except Exception:
+                final_path = raw_path
+
+        voice_type = getattr(user, "awaiting_voice_clone_type", "") or "default"
+        if voice_type.startswith("char:"):
+            char_name = voice_type.split(":", 1)[1].strip()
+            if char_name:
+                user.voice_map[char_name.lower()] = str(final_path)
+        elif voice_type == "narrator":
+            user.narrator_voice_path = str(final_path)
+        else:
+            user.voice_clone_path = str(final_path)
+        user.tts_engine = "chatterbox"
+        user.awaiting_voice_clone = False
+        user.awaiting_voice_clone_type = ""
+        try:
+            user.save_user_history(chat_id, cfg.history_dir_path)
+        except Exception as e:
+            logging.warning("Failed to save user history after voice clone set: %s", e)
+        if voice_type.startswith("char:"):
+            await message.reply("Character voice saved. New TTS voice is active.")
+        elif voice_type == "narrator":
+            await message.reply("Narrator voice saved. New TTS voice is active.")
+        else:
+            await message.reply("Voice clone reference saved. New TTS voice is active.")
+        return True
 
     async def add_document_to_context(self, message: Message, text_content: str, file_name: str):
         chat_id = message.chat.id
@@ -351,6 +679,14 @@ class AiogramLlmBot:
     async def thread_get_message(self, message: types.Message):
         if message.document is not None:
             await self.thread_get_document(message)
+            return True
+        if message.voice is not None or message.audio is not None:
+            handled = await self.thread_get_voice_reference(message)
+            if not handled and utils.check_user_permission(message.chat.id):
+                await message.reply(
+                    "If you want to set a voice, use /voice_clone, /voice_narrator, or /voice_char <Name> "
+                    "and then send a voice/audio clip."
+                )
             return True
 
         user_text = message.text
@@ -894,15 +1230,208 @@ class AiogramLlmBot:
         )
         await self.bot.edit_message_reply_markup(chat_id=chat_id, message_id=msg.message_id, reply_markup=lang_buttons)
 
+    @staticmethod
+    def get_voice_option_lists(language: str):
+        lang = language if language in Silero.voices else "en"
+        male = Silero.voices[lang]["male"]
+        female = Silero.voices[lang]["female"]
+        values = ["None", "__CLONE__", "__NARRATOR__", "__CHAR__"] + male + female
+        labels = (
+            ["🔇None", "🧬Clone", "🎭Narrator", "👤Character"]
+            + list(map(lambda x: x + "🚹", male))
+            + list(map(lambda x: x + "🚺", female))
+        )
+        return values, labels
+
+    @staticmethod
+    def split_tts_text(text: str, max_chars: int = TTS_CHUNK_MAX_CHARS):
+        text = text.strip()
+        if not text:
+            return []
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+        if not paragraphs:
+            paragraphs = [text]
+        chunks = []
+        for para in paragraphs:
+            if len(para) <= max_chars:
+                chunks.append(para)
+                continue
+            sentences = re.split(r"(?<=[.!?])\s+", para)
+            if len(sentences) == 1:
+                sentences = [para]
+            current = ""
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if len(sentence) > max_chars:
+                    if current:
+                        chunks.append(current.strip())
+                        current = ""
+                    for i in range(0, len(sentence), max_chars):
+                        part = sentence[i:i + max_chars].strip()
+                        if part:
+                            chunks.append(part)
+                    continue
+                if not current:
+                    current = sentence
+                elif len(current) + len(sentence) + 1 <= max_chars:
+                    current = f"{current} {sentence}"
+                else:
+                    chunks.append(current.strip())
+                    current = sentence
+            if current:
+                chunks.append(current.strip())
+        return chunks
+
+    @staticmethod
+    def split_asterisk_segments(text: str):
+        segments = []
+        last = 0
+        for match in re.finditer(r"\*([^*]+)\*", text):
+            if match.start() > last:
+                segments.append((text[last:match.start()], False))
+            segments.append((match.group(1), True))
+            last = match.end()
+        if last < len(text):
+            segments.append((text[last:], False))
+        return segments
+
+    def parse_tts_segments(self, text: str, user: User):
+        segments = []
+        current_speaker = None
+        for line in text.splitlines():
+            line = line.rstrip()
+            if not line.strip():
+                continue
+            match = re.match(r"^\s*([^:]{1,%s}):\s*(.*)$" % TTS_MAX_CHARACTER_NAME, line)
+            if match:
+                current_speaker = match.group(1).strip()
+                line = match.group(2)
+            for part, is_narrator in self.split_asterisk_segments(line):
+                part = part.strip()
+                if not part:
+                    continue
+                if is_narrator:
+                    voice_path = user.narrator_voice_path or user.voice_clone_path
+                    label = "Narrator"
+                else:
+                    label = current_speaker
+                    voice_path = None
+                    if current_speaker:
+                        voice_path = user.voice_map.get(current_speaker.lower())
+                    if not voice_path:
+                        voice_path = user.voice_clone_path
+                segments.append(
+                    {
+                        "text": part,
+                        "voice_path": voice_path,
+                        "label": label,
+                    }
+                )
+        if not segments:
+            segments = [{"text": text.strip(), "voice_path": user.voice_clone_path, "label": None}]
+        merged = []
+        for seg in segments:
+            if (
+                merged
+                and seg["voice_path"] == merged[-1]["voice_path"]
+                and seg["label"] == merged[-1]["label"]
+            ):
+                merged[-1]["text"] = f"{merged[-1]['text']} {seg['text']}".strip()
+            else:
+                merged.append(seg)
+        return merged
+
+    @staticmethod
+    def concat_audio_paths(paths: list[str], out_path: str):
+        if not paths:
+            return None
+        if len(paths) == 1:
+            return paths[0]
+        try:
+            import torchaudio as ta
+            import torch
+        except Exception as e:
+            logging.warning("TTS concat failed to import torchaudio/torch: %s", e)
+            return paths[0]
+
+        merged = None
+        target_sr = None
+        target_channels = None
+        for path in paths:
+            try:
+                wav, sr = ta.load(path)
+            except Exception as e:
+                logging.warning("TTS concat failed to load %s: %s", path, e)
+                continue
+            if target_sr is None:
+                target_sr = sr
+            if sr != target_sr:
+                wav = ta.functional.resample(wav, sr, target_sr)
+            if target_channels is None:
+                target_channels = wav.shape[0]
+            if wav.shape[0] != target_channels:
+                wav = wav.mean(dim=0, keepdim=True)
+            merged = wav if merged is None else torch.cat([merged, wav], dim=1)
+        if merged is None:
+            return paths[0]
+        out_dir = os.path.dirname(out_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        ta.save(out_path, merged, target_sr)
+        return out_path
+
     async def on_load_voice_button(self, cbq, option: str):
         chat_id = cbq.message.chat.id
         user = self.users[chat_id]
-        male = Silero.voices[user.language]["male"]
-        female = Silero.voices[user.language]["female"]
-        voice_dict = ["None"] + male + female
+        voice_values, _ = self.get_voice_option_lists(user.language)
         voice_num = int(option.replace(const.BTN_VOICE_LOAD, ""))
-        user.silero_speaker = voice_dict[voice_num]
-        user.silero_model_id = Silero.voices[user.language]["model"]
+        if voice_num >= len(voice_values):
+            return
+        selected_voice = voice_values[voice_num]
+        if selected_voice == "None":
+            user.tts_engine = "none"
+            user.silero_speaker = "None"
+            user.silero_model_id = "None"
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+        elif selected_voice == "__CLONE__":
+            user.tts_engine = "chatterbox"
+            if not getattr(user, "voice_clone_path", None):
+                user.awaiting_voice_clone = True
+                user.awaiting_voice_clone_type = "default"
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text="Send a short voice/audio clip (5-15 seconds) to set the clone voice.",
+                )
+        elif selected_voice == "__NARRATOR__":
+            user.tts_engine = "chatterbox"
+            user.awaiting_voice_clone = True
+            user.awaiting_voice_clone_type = "narrator"
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text="Send a short voice/audio clip (5-15 seconds) to set the narrator voice.",
+            )
+        elif selected_voice == "__CHAR__":
+            user.tts_engine = "chatterbox"
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text="To set a character voice, use /voice_char <Character Name> and then send the voice clip.",
+            )
+        else:
+            user.tts_engine = "silero"
+            user.silero_speaker = selected_voice
+            lang = user.language if user.language in Silero.voices else "en"
+            user.silero_model_id = Silero.voices[lang]["model"]
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+        try:
+            user.save_user_history(chat_id, cfg.history_dir_path)
+        except Exception as e:
+            logging.warning("Failed to save user history after voice change: %s", e)
         send_text = utils.get_conversation_info(user)
         message_id = cbq.message.message_id
         await self.bot.edit_message_text(
@@ -925,9 +1454,8 @@ class AiogramLlmBot:
             return
         shift = int(option.replace(const.BTN_VOICE_LIST, ""))
         user = self.users[chat_id]
-        male = list(map(lambda x: x + "🚹", Silero.voices[user.language]["male"]))
-        female = list(map(lambda x: x + "🚺", Silero.voices[user.language]["female"]))
-        voice_dict = ["🔇None"] + male + female
+        _, voice_labels = self.get_voice_option_lists(user.language)
+        voice_dict = voice_labels
         voice_buttons = self.get_switch_keyboard(
             opt_list=list(voice_dict),
             shift=shift,

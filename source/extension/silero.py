@@ -1,5 +1,8 @@
 import logging
+import os
 import re
+import time
+import uuid
 
 import torch
 from num2words import num2words
@@ -91,6 +94,18 @@ class Silero:
         self.sample_rate = 48000  # 8000, 24000, 48000
         self.silero_repo = "snakers4/silero-models"
         self.model = "silero_tts"
+        history_dir = "history"
+        try:
+            from extensions.telegram_bot.source.conf import cfg as _cfg
+            history_dir = _cfg.history_dir_path
+        except Exception:
+            try:
+                from source.conf import cfg as _cfg
+                history_dir = _cfg.history_dir_path
+            except Exception:
+                history_dir = "history"
+        self.output_dir = os.path.join(history_dir, "tts_audio")
+        os.makedirs(self.output_dir, exist_ok=True)
         logging.info(f"### Silero INIT DONE ###")
 
     async def get_audio(self, text: str, user_id: int, user: User):
@@ -114,7 +129,10 @@ class Silero:
                 language=user.language,
                 speaker=user.silero_model_id,
             )
-            wav_path = str(user_id) + ".wav"
+            wav_path = os.path.join(
+                self.output_dir,
+                f"{user_id}_silero_{time.time_ns()}_{uuid.uuid4().hex}.wav",
+            )
             text = self.preprocess(text)
             if len(text.replace(" ", "")) == 0:
                 return None

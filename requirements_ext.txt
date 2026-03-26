@@ -5,6 +5,9 @@ omegaconf==2.3.0
 num2words>=0.5.12
 Pillow>=10.0.0
 torch>=2.0.1
+torchaudio
+chatterbox-tts
+torchcodec
 backoff>=2.2.1
 requests>=2.31.0
 urllib3>=2.0.4
