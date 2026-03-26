@@ -92,6 +92,60 @@ class AiogramLlmBot:
         logging.info(f"### TelegramBotWrapper INIT DONE ###")
         logging.info(f"### !!! READY !!! ###")
 
+    @staticmethod
+    def _slugify_voice_name(name: str) -> str:
+        raw = (name or "").strip().lower()
+        cleaned = []
+        for ch in raw:
+            if ch.isascii() and ch.isalnum():
+                cleaned.append(ch)
+            elif ch in {" ", "-", "_"}:
+                cleaned.append("_")
+        slug = "".join(cleaned)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug or "voice"
+
+    def _voice_ref_base(self, chat_id: int, voice_type: str, char_name: str | None = None) -> Path:
+        base_dir = Path(cfg.history_dir_path) / "voice_refs" / "shared"
+        if voice_type == "char":
+            slug = self._slugify_voice_name(char_name or "character")
+            return base_dir / "chars" / slug
+        if voice_type == "narrator":
+            return base_dir / "narrator"
+        return base_dir / "default"
+
+    def _find_voice_ref(self, chat_id: int, voice_type: str, char_name: str | None = None) -> str | None:
+        base = self._voice_ref_base(chat_id, voice_type, char_name)
+        wav_path = base.with_suffix(".wav")
+        if wav_path.exists():
+            return str(wav_path)
+        if base.parent.exists():
+            for candidate in sorted(base.parent.glob(base.stem + ".*")):
+                if candidate.is_file():
+                    return str(candidate)
+        if voice_type == "default":
+            legacy_dir = Path(cfg.history_dir_path) / "voice_refs"
+            legacy_wav = legacy_dir / f"{chat_id}_ref.wav"
+            if legacy_wav.exists():
+                return str(legacy_wav)
+            if legacy_dir.exists():
+                for candidate in sorted(legacy_dir.glob(f"{chat_id}_ref.*")):
+                    if candidate.is_file():
+                        return str(candidate)
+        return None
+
+    def _has_any_voice_files(self, chat_id: int) -> bool:
+        if self._find_voice_ref(chat_id, "default"):
+            return True
+        if self._find_voice_ref(chat_id, "narrator"):
+            return True
+        char_dir = self._voice_ref_base(chat_id, "char", "character").parent
+        if char_dir.exists():
+            for entry in char_dir.iterdir():
+                if entry.is_file():
+                    return True
+        return False
+
     # =============================================================================
     # Run bot with token! Initiate updater obj!
     async def run_telegram_bot(self, bot_token="", token_file_name=""):
@@ -253,8 +307,20 @@ class AiogramLlmBot:
             else:
                 audio_text = text
             voice_clone_path = getattr(user, "voice_clone_path", None)
-            has_any_voice = bool(voice_clone_path) or bool(getattr(user, "narrator_voice_path", None)) or bool(
-                getattr(user, "voice_map", {})
+            if not voice_clone_path:
+                existing_default = self._find_voice_ref(chat_id, "default")
+                if existing_default:
+                    user.voice_clone_path = existing_default
+                    voice_clone_path = existing_default
+            if not getattr(user, "narrator_voice_path", None):
+                existing_narrator = self._find_voice_ref(chat_id, "narrator")
+                if existing_narrator:
+                    user.narrator_voice_path = existing_narrator
+            has_any_voice = (
+                bool(voice_clone_path)
+                or bool(getattr(user, "narrator_voice_path", None))
+                or bool(getattr(user, "voice_map", {}))
+                or self._has_any_voice_files(chat_id)
             )
             logging.info(
                 "TTS chatterbox: voice_clone_path=%s exists=%s",
@@ -520,6 +586,23 @@ class AiogramLlmBot:
             return False
         utils.init_check_user(self.users, chat_id)
         user = self.users[chat_id]
+        text = (message.text or "").strip()
+        replace = text.lower().endswith(" --replace")
+        existing_path = self._find_voice_ref(chat_id, "default")
+        if existing_path and not replace:
+            user.tts_engine = "chatterbox"
+            user.voice_clone_path = existing_path
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+            try:
+                user.save_user_history(chat_id, cfg.history_dir_path)
+            except Exception as e:
+                logging.warning("Failed to save user history after voice clone set: %s", e)
+            await message.reply(
+                "Existing default voice found and activated. "
+                "Send /voice_clone --replace to overwrite it."
+            )
+            return True
         user.tts_engine = "chatterbox"
         user.awaiting_voice_clone = True
         user.awaiting_voice_clone_type = "default"
@@ -535,6 +618,23 @@ class AiogramLlmBot:
             return False
         utils.init_check_user(self.users, chat_id)
         user = self.users[chat_id]
+        text = (message.text or "").strip()
+        replace = text.lower().endswith(" --replace")
+        existing_path = self._find_voice_ref(chat_id, "narrator")
+        if existing_path and not replace:
+            user.tts_engine = "chatterbox"
+            user.narrator_voice_path = existing_path
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+            try:
+                user.save_user_history(chat_id, cfg.history_dir_path)
+            except Exception as e:
+                logging.warning("Failed to save user history after narrator voice set: %s", e)
+            await message.reply(
+                "Existing narrator voice found and activated. "
+                "Send /voice_narrator --replace to overwrite it."
+            )
+            return True
         user.tts_engine = "chatterbox"
         user.awaiting_voice_clone = True
         user.awaiting_voice_clone_type = "narrator"
@@ -551,6 +651,9 @@ class AiogramLlmBot:
         utils.init_check_user(self.users, chat_id)
         user = self.users[chat_id]
         text = message.text or ""
+        replace = text.strip().lower().endswith(" --replace")
+        if replace:
+            text = text[: -len(" --replace")].rstrip()
         parts = text.split(maxsplit=1)
         if len(parts) < 2 or not parts[1].strip():
             await message.reply("Usage: /voice_char <Character Name>")
@@ -558,6 +661,21 @@ class AiogramLlmBot:
         char_name = parts[1].strip()
         if len(char_name) > TTS_MAX_CHARACTER_NAME:
             char_name = char_name[:TTS_MAX_CHARACTER_NAME]
+        existing_path = self._find_voice_ref(chat_id, "char", char_name)
+        if existing_path and not replace:
+            user.tts_engine = "chatterbox"
+            user.voice_map[char_name.lower()] = existing_path
+            user.awaiting_voice_clone = False
+            user.awaiting_voice_clone_type = ""
+            try:
+                user.save_user_history(chat_id, cfg.history_dir_path)
+            except Exception as e:
+                logging.warning("Failed to save user history after character voice set: %s", e)
+            await message.reply(
+                f"Existing voice for '{char_name}' found and activated. "
+                f"Send /voice_char {char_name} --replace to overwrite it."
+            )
+            return True
         user.tts_engine = "chatterbox"
         user.awaiting_voice_clone = True
         user.awaiting_voice_clone_type = f"char:{char_name}"
@@ -601,16 +719,24 @@ class AiogramLlmBot:
         if not ext:
             ext = "ogg"
 
-        ref_dir = Path(cfg.history_dir_path) / "voice_refs"
-        ref_dir.mkdir(parents=True, exist_ok=True)
-        raw_path = ref_dir / f"{chat_id}_ref.{ext}"
+        voice_type = getattr(user, "awaiting_voice_clone_type", "") or "default"
+        char_name = None
+        if voice_type.startswith("char:"):
+            char_name = voice_type.split(":", 1)[1].strip()
+            base_path = self._voice_ref_base(chat_id, "char", char_name)
+        elif voice_type == "narrator":
+            base_path = self._voice_ref_base(chat_id, "narrator")
+        else:
+            base_path = self._voice_ref_base(chat_id, "default")
+        base_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path = base_path.with_suffix(f".{ext}")
         file_content = await self.bot.download(file_id)
         with raw_path.open("wb") as ref_file:
             ref_file.write(file_content.read())
 
         final_path = raw_path
         if ext != "wav" and shutil.which("ffmpeg"):
-            wav_path = ref_dir / f"{chat_id}_ref.wav"
+            wav_path = base_path.with_suffix(".wav")
             try:
                 import subprocess
 
@@ -624,9 +750,7 @@ class AiogramLlmBot:
             except Exception:
                 final_path = raw_path
 
-        voice_type = getattr(user, "awaiting_voice_clone_type", "") or "default"
         if voice_type.startswith("char:"):
-            char_name = voice_type.split(":", 1)[1].strip()
             if char_name:
                 user.voice_map[char_name.lower()] = str(final_path)
         elif voice_type == "narrator":
@@ -1299,6 +1423,14 @@ class AiogramLlmBot:
 
     def parse_tts_segments(self, text: str, user: User):
         segments = []
+        default_voice_path = None
+        if getattr(user, "user_id", 0):
+            existing_default = self._find_voice_ref(user.user_id, "default")
+            if existing_default:
+                user.voice_clone_path = existing_default
+                default_voice_path = existing_default
+        if not default_voice_path:
+            default_voice_path = getattr(user, "voice_clone_path", None)
         current_speaker = None
         for line in text.splitlines():
             line = line.rstrip()
@@ -1313,15 +1445,30 @@ class AiogramLlmBot:
                 if not part:
                     continue
                 if is_narrator:
-                    voice_path = user.narrator_voice_path or user.voice_clone_path
+                    voice_path = None
+                    if getattr(user, "user_id", 0):
+                        existing_narrator = self._find_voice_ref(user.user_id, "narrator")
+                        if existing_narrator:
+                            user.narrator_voice_path = existing_narrator
+                            voice_path = existing_narrator
+                    if not voice_path:
+                        voice_path = user.narrator_voice_path
+                    if not voice_path:
+                        voice_path = default_voice_path
                     label = "Narrator"
                 else:
                     label = current_speaker
                     voice_path = None
                     if current_speaker:
-                        voice_path = user.voice_map.get(current_speaker.lower())
+                        if getattr(user, "user_id", 0):
+                            existing_char = self._find_voice_ref(user.user_id, "char", current_speaker)
+                            if existing_char:
+                                user.voice_map[current_speaker.lower()] = existing_char
+                                voice_path = existing_char
+                        if not voice_path:
+                            voice_path = user.voice_map.get(current_speaker.lower())
                     if not voice_path:
-                        voice_path = user.voice_clone_path
+                        voice_path = default_voice_path
                 segments.append(
                     {
                         "text": part,
@@ -1330,7 +1477,7 @@ class AiogramLlmBot:
                     }
                 )
         if not segments:
-            segments = [{"text": text.strip(), "voice_path": user.voice_clone_path, "label": None}]
+            segments = [{"text": text.strip(), "voice_path": default_voice_path, "label": None}]
         merged = []
         for seg in segments:
             if (
