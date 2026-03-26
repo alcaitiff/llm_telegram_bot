@@ -240,7 +240,7 @@ class AiogramLlmBot:
             if audio_path is not None:
                 message = await self.bot.send_audio(
                     chat_id=chat_id,
-                    audio=InputFile(audio_path),
+                    audio=FSInputFile(audio_path),
                     caption=text,
                     parse_mode="HTML",
                     reply_markup=self.get_chat_keyboard(chat_id, True),

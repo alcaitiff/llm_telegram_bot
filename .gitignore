@@ -11,3 +11,6 @@ history/telegram_history_here.txt
 .env
 .idea
 llama_cpp
+*.wav
+telegram_token.txt
+*/__pycache__/*
