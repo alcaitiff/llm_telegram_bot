@@ -10,6 +10,7 @@
     "Switch_greeting":    {"admin": true,"chat": true,"chat-restricted": true,"notebook": true,"persona": false,"query": false},
     "Cutoff":             {"admin": true,"chat": true,"chat-restricted": true,"notebook": true,"persona": false,"query": false},
     "options":            {"admin": true,"chat": true,"chat-restricted": true,"notebook": true,"persona": false,"query": true},
+    "Image":              {"admin": true,"chat": true,"chat-restricted": true,"notebook": true,"persona": false,"query": true},
     "Chars_list":         {"admin": true,"chat": true,"chat-restricted": false,"notebook": true,"persona": false,"query": true},
     "Chars_load":         {"admin": true,"chat": true,"chat-restricted": false,"notebook": true,"persona": false,"query": true},
     "Reset":              {"admin": true,"chat": true,"chat-restricted": true,"notebook": true,"persona": false,"query": false},

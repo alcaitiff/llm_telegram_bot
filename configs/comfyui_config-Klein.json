@@ -1,13 +1,13 @@
 {
 	"comfyui_url": "http://127.0.0.1:8188",
-	"comfyui_workflow_file_path": "configs/Klein-edit.json",
-	"comfyui_prompt_node_id": "185",
+	"comfyui_workflow_file_path": "configs/comfyui_workflow.json",
+	"comfyui_prompt_node_id": "94",
 	"comfyui_prompt_field": "text",
 	"comfyui_negative_prompt": "text",
-	"comfyui_negative_prompt_node_id": "212",
+	"comfyui_negative_prompt_node_id": "89",
 	"comfyui_negative_prompt_field": "text",
-	"comfyui_seed_node_id": "199",
-	"comfyui_seed_field": "seed",
+	"comfyui_seed_node_id": "124",
+	"comfyui_seed_field": "noise_seed",
 	"comfyui_timeout_sec": 120,
 	"comfyui_poll_interval_sec": 1.0
 }

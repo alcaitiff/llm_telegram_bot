@@ -1,0 +1,261 @@
+{
+  "75": {
+    "inputs": {
+      "vae_name": "Flux/flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "76": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "77": {
+    "inputs": {
+      "unet_name": "Flux/flux-2-klein-9b-nvfp4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "185": {
+    "inputs": {
+      "text": ""
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "189": {
+    "inputs": {
+      "filename_prefix": "llm/i",
+      "images": [
+        "193",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "190": {
+    "inputs": {
+      "text": [
+        "209",
+        0
+      ],
+      "clip": [
+        "76",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "192": {
+    "inputs": {
+      "conditioning": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "193": {
+    "inputs": {
+      "samples": [
+        "211",
+        0
+      ],
+      "vae": [
+        "75",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "199": {
+    "inputs": {
+      "seed": 943,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "sgm_uniform",
+      "denoise": 0.85,
+      "model": [
+        "203",
+        0
+      ],
+      "positive": [
+        "201:208",
+        0
+      ],
+      "negative": [
+        "201:207",
+        0
+      ],
+      "latent_image": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "200": {
+    "inputs": {
+      "image": "v5_00216_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "202": {
+    "inputs": {
+      "pixels": [
+        "200",
+        0
+      ],
+      "vae": [
+        "75",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "203": {
+    "inputs": {
+      "lora_name": "KLEIN/KLEIN-Unchained-V2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "77",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "209": {
+    "inputs": {
+      "string_a": [
+        "210",
+        0
+      ],
+      "string_b": [
+        "185",
+        0
+      ]
+    },
+    "class_type": "Basic data handling: StringConcat",
+    "_meta": {
+      "title": "concat"
+    }
+  },
+  "210": {
+    "inputs": {
+      "text": "Make the woman on the image 1 on this situation:\n"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "211": {
+    "inputs": {
+      "anything": [
+        "199",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "Clean VRAM Used"
+    }
+  },
+  "212": {
+    "inputs": {
+      "text": ""
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "201:207": {
+    "inputs": {
+      "conditioning": [
+        "192",
+        0
+      ],
+      "latent": [
+        "201:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "201:78": {
+    "inputs": {
+      "pixels": [
+        "200",
+        0
+      ],
+      "vae": [
+        "75",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "201:208": {
+    "inputs": {
+      "conditioning": [
+        "190",
+        0
+      ],
+      "latent": [
+        "201:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  }
+}

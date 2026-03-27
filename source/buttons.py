@@ -83,6 +83,8 @@ def get_chat_keyboard(chat_id, user: Optional[User], no_previous=False):
     if utils.check_user_rule(chat_id, const.BTN_CUTOFF):
         keyboard_row.append({"text": "❌Delete", "callback_data": const.BTN_CUTOFF})
     keyboard.append(keyboard_row)
+    if utils.check_user_rule(chat_id, const.BTN_IMAGE):
+        keyboard.append([{"text": "📷Image", "callback_data": const.BTN_IMAGE}])
     if len(user.last.outbound) > 4000 or (user.language != cfg.llm_lang and len(user.last.outbound) > 2000):
         keyboard_row2 = [{"text": "💾🔻download full", "callback_data": const.BTN_GET_LONG_TEXT_FILE},
                          {"text": "✉️🔻send full", "callback_data": const.BTN_GET_LONG_TEXT_MSG}]

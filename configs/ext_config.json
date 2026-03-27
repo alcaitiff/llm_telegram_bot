@@ -19,7 +19,7 @@
 	"sd_config_file_path": "extensions/telegram_bot/configs/sd_config.json",
 	"sd_api_url": "http://127.0.0.1:7860",
 	"sd_api_prompt_of": "Stable diffusion prompt described OBJECT:",
-	"sd_api_prompt_self": "Stable diffusion prompt described what user seeing right now:",
+	"sd_api_prompt_self": "Write a single image prompt that describes the current scene visually. Include specific subjects, setting, lighting, and camera/style. Do NOT include dialogue, speech, quotes, or character lines. Output only the visual description.",
 	"image_backend": "sd_webui",
 	"comfyui_config_file_path": "extensions/telegram_bot/configs/comfyui_config.json",
 	"comfyui_url": "http://127.0.0.1:8188",

@@ -41,7 +41,13 @@ class Config(BaseModel):
         default="Detailed description of OBJECT:", description="sd api - prompt for ordinary request"
     )
     sd_api_prompt_self: str = Field(
-        default="Detailed description of surroundings:", description="sd api - prompt for empty request"
+        default=(
+            "Write a single image prompt that describes the current scene visually. "
+            "Include specific subjects, setting, lighting, and camera/style. "
+            "Do NOT include dialogue, speech, quotes, or character lines. "
+            "Output only the visual description."
+        ),
+        description="sd api - prompt for empty request",
     )
 
     html_tag: list = Field(default=["", ""], description="html tags for ordinary text")

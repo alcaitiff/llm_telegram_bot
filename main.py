@@ -271,6 +271,18 @@ class AiogramLlmBot:
             await asyncio.sleep(5)
             limit_counter -= 1
 
+    @staticmethod
+    def sanitize_image_prompt(text: str) -> str:
+        if not text:
+            return ""
+        if "[TOOL_CALLS]" in text:
+            text = text.split("[TOOL_CALLS]")[0]
+        text = re.sub(r"<tool_calls>.*?</tool_calls>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+        for token in ["</s>", "<s>", "<|endoftext|>", "<|assistant|>", "<|user|>", "<|tool|>"]:
+            text = text.replace(token, " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
     @backoff.on_exception(
         backoff.expo,
         (urllib3.exceptions.HTTPError, urllib3.exceptions.ConnectTimeoutError),
@@ -279,6 +291,7 @@ class AiogramLlmBot:
     async def send_sd_image(self, message, answer: str, user_text: str):
         chat_id = message.chat.id
         try:
+            answer = self.sanitize_image_prompt(answer)
             file_list = await self.ImageApi.get_image(answer)
             answer = answer.replace(cfg.sd_api_prompt_of.replace("OBJECT", user_text[1:].strip()), "")
             for char in ["[", "]", "{", "}", "(", ")", "*", '"', "'"]:
@@ -944,6 +957,8 @@ class AiogramLlmBot:
             await self.on_regenerate_message_button(cbq)
         elif option == const.BTN_CUTOFF and utils.check_user_rule(chat_id, option):
             await self.on_delete_message_button(cbq)
+        elif option == const.BTN_IMAGE and utils.check_user_rule(chat_id, option):
+            await self.on_image_button(cbq)
         elif option == const.BTN_DOWNLOAD and utils.check_user_rule(chat_id, option):
             await self.on_download_json_button(cbq)
         elif option == const.BTN_OPTION and utils.check_user_rule(chat_id, option):
@@ -1098,6 +1113,27 @@ class AiogramLlmBot:
             message_id=msg.message_id,
             cbq=cbq,
         )
+        user.save_user_history(chat_id, cfg.history_dir_path)
+
+    async def on_image_button(self, cbq):
+        chat_id = cbq.message.chat.id
+        user = self.users[chat_id]
+        await self.clean_last_message_markup(chat_id)
+        image_prefix = cfg.sd_api_prefixes[0] if cfg.sd_api_prefixes else "📷"
+        answer, return_msg_action = await tp.aget_answer(
+            text_in=image_prefix,
+            user=user,
+            bot_mode=cfg.bot_mode,
+            generation_params=cfg.generation_params,
+            name_in=self.get_user_profile_name(cbq),
+        )
+        if return_msg_action == const.MSG_SD_API:
+            user.truncate_last_message()
+            await self.send_sd_image(cbq.message, answer, image_prefix)
+        else:
+            message = await self.send_message(text=answer, chat_id=chat_id)
+            if user.messages:
+                user.last.msg_id = message.message_id
         user.save_user_history(chat_id, cfg.history_dir_path)
 
     async def on_delete_message_button(self, cbq):
