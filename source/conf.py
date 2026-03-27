@@ -189,6 +189,16 @@ class Config(BaseModel):
                     )
 
                 self.load_comfyui_config()
+                self.only_mention_in_chat = config.get("only_mention_in_chat", self.only_mention_in_chat)
+                self.chance_to_get_answer = config.get("chance_to_get_answer", self.chance_to_get_answer)
+                self.html_tag = config.get("html_tag", self.html_tag)
+                self.translate_html_tag = config.get("translate_html_tag", self.translate_html_tag)
+                cfg.translation_as_hidden_text = config.get(
+                    "translation_as_hidden_text", cfg.translation_as_hidden_text
+                )
+                self.proxy_url = config.get("proxy_url", self.proxy_url)
+        else:
+            logging.error("Cant find config_file " + config_file_path)
 
     def load_comfyui_config(self):
         if not exists(normpath(self.comfyui_config_file_path)):
@@ -215,16 +225,6 @@ class Config(BaseModel):
         set_if_present("comfyui_seed_field", "comfyui_seed_field")
         set_if_present("comfyui_timeout_sec", "comfyui_timeout_sec")
         set_if_present("comfyui_poll_interval_sec", "comfyui_poll_interval_sec")
-                self.only_mention_in_chat = config.get("only_mention_in_chat", self.only_mention_in_chat)
-                self.chance_to_get_answer = config.get("chance_to_get_answer", self.chance_to_get_answer)
-                self.html_tag = config.get("html_tag", self.html_tag)
-                self.translate_html_tag = config.get("translate_html_tag", self.translate_html_tag)
-                cfg.translation_as_hidden_text = config.get(
-                    "translation_as_hidden_text", cfg.translation_as_hidden_text
-                )
-                self.proxy_url = config.get("proxy_url", self.proxy_url)
-        else:
-            logging.error("Cant find config_file " + config_file_path)
 
     def load_prompt_template(self, prompt_template_path=""):
         if not prompt_template_path:
