@@ -1,0 +1,167 @@
+{
+  "6": {
+    "inputs": {
+      "text": "A whimsical sorceress with wild, curly brown hair and warm, golden eyes sits cross-legged on a plush, velvety cloud that serves as a merry-go-round, surrounded by a halo of soft, white light, as she gently coaxes a parade of living books to dance around her in a lively, ethereal waltz, their leather-bound covers shimmering with a soft, rainbow glow, their pages fluttering like wings as they twirl and leap through the air, their titles and authors written in glittering, swirling script that shimmers like stardust, the books weaving in and out of the cloudy merry-go-round's gentle, lazy rotation, as the sorceress's long, flowing skirts billow out around her, a deep, rich purple that seems almost black, but is shot through with threads of silver and gold that catch the light and shimmer like the stars on a clear, moonless night, the atmosphere is one of joyful, weightless wonder, as if the very fabric of reality has been transformed into a magical, dreamlike realm where anything is possible, and the sorceress is the gentle, guiding spirit who brings it all to life.",
+      "clip": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "blurry ugly bad",
+      "clip": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "11": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "13": {
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "16": {
+    "inputs": {
+      "unet_name": "z-image/z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "17": {
+    "inputs": {
+      "vae_name": "Flux/ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "18": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "38": {
+    "inputs": {
+      "seed": 1236,
+      "steps": 9,
+      "cfg": 1,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "44",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "39": {
+    "inputs": {
+      "samples": [
+        "52",
+        0
+      ],
+      "vae": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "40": {
+    "inputs": {
+      "filename_prefix": "llm/i",
+      "images": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "44": {
+    "inputs": {
+      "lora_name": "ZIT/Mystic-HHH-C-ZIT.safetensors",
+      "strength_model": 1,
+      "model": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "52": {
+    "inputs": {
+      "anything": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "Clean VRAM Used"
+    }
+  }
+}
