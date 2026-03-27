@@ -87,6 +87,19 @@ class Config(BaseModel):
     user_rules_file_path: str = Field(default="telegram_user_rules.json", description="")
     sd_api_url: str = Field(default="http://127.0.0.1:7860", description="")
     sd_config_file_path: str = Field(default="sd_config.json", description="")
+    image_backend: str = Field(default="sd_webui", description="image backend: sd_webui or comfyui")
+    comfyui_config_file_path: str = Field(default="configs/comfyui_config.json", description="")
+    comfyui_url: str = Field(default="http://127.0.0.1:8188", description="")
+    comfyui_workflow_file_path: str = Field(default="configs/comfyui_workflow.json", description="")
+    comfyui_prompt_node_id: str = Field(default="", description="")
+    comfyui_prompt_field: str = Field(default="text", description="")
+    comfyui_negative_prompt: str = Field(default="", description="")
+    comfyui_negative_prompt_node_id: str = Field(default="", description="")
+    comfyui_negative_prompt_field: str = Field(default="text", description="")
+    comfyui_seed_node_id: str = Field(default="", description="")
+    comfyui_seed_field: str = Field(default="seed", description="")
+    comfyui_timeout_sec: int = Field(default=120, description="")
+    comfyui_poll_interval_sec: float = Field(default=1.0, description="")
     proxy_url: str = Field(default="", description="")
     # Set bot mode
     bot_mode: str = Field(default="admin", description="")
@@ -150,6 +163,58 @@ class Config(BaseModel):
                 self.sd_api_prompt_of = config.get("sd_api_prompt_of", self.sd_api_prompt_of)
                 self.sd_api_prompt_self = config.get("sd_api_prompt_self", self.sd_api_prompt_self)
                 self.sd_config_file_path = config.get("sd_config_file_path", self.sd_config_file_path)
+                self.image_backend = config.get("image_backend", self.image_backend)
+                self.comfyui_config_file_path = config.get("comfyui_config_file_path", self.comfyui_config_file_path)
+
+                comfyui_config_exists = exists(normpath(self.comfyui_config_file_path))
+                if not comfyui_config_exists:
+                    self.comfyui_url = config.get("comfyui_url", self.comfyui_url)
+                    self.comfyui_workflow_file_path = config.get(
+                        "comfyui_workflow_file_path", self.comfyui_workflow_file_path
+                    )
+                    self.comfyui_prompt_node_id = config.get("comfyui_prompt_node_id", self.comfyui_prompt_node_id)
+                    self.comfyui_prompt_field = config.get("comfyui_prompt_field", self.comfyui_prompt_field)
+                    self.comfyui_negative_prompt = config.get("comfyui_negative_prompt", self.comfyui_negative_prompt)
+                    self.comfyui_negative_prompt_node_id = config.get(
+                        "comfyui_negative_prompt_node_id", self.comfyui_negative_prompt_node_id
+                    )
+                    self.comfyui_negative_prompt_field = config.get(
+                        "comfyui_negative_prompt_field", self.comfyui_negative_prompt_field
+                    )
+                    self.comfyui_seed_node_id = config.get("comfyui_seed_node_id", self.comfyui_seed_node_id)
+                    self.comfyui_seed_field = config.get("comfyui_seed_field", self.comfyui_seed_field)
+                    self.comfyui_timeout_sec = config.get("comfyui_timeout_sec", self.comfyui_timeout_sec)
+                    self.comfyui_poll_interval_sec = config.get(
+                        "comfyui_poll_interval_sec", self.comfyui_poll_interval_sec
+                    )
+
+                self.load_comfyui_config()
+
+    def load_comfyui_config(self):
+        if not exists(normpath(self.comfyui_config_file_path)):
+            return
+        try:
+            with open(normpath(self.comfyui_config_file_path), "r") as comfyui_config_file:
+                comfyui_config = json.loads(comfyui_config_file.read())
+        except Exception as exception:
+            logging.error("Failed to load comfyui config: %s %s", self.comfyui_config_file_path, exception)
+            return
+
+        def set_if_present(key: str, attr: str):
+            if key in comfyui_config:
+                setattr(self, attr, comfyui_config.get(key))
+
+        set_if_present("comfyui_url", "comfyui_url")
+        set_if_present("comfyui_workflow_file_path", "comfyui_workflow_file_path")
+        set_if_present("comfyui_prompt_node_id", "comfyui_prompt_node_id")
+        set_if_present("comfyui_prompt_field", "comfyui_prompt_field")
+        set_if_present("comfyui_negative_prompt", "comfyui_negative_prompt")
+        set_if_present("comfyui_negative_prompt_node_id", "comfyui_negative_prompt_node_id")
+        set_if_present("comfyui_negative_prompt_field", "comfyui_negative_prompt_field")
+        set_if_present("comfyui_seed_node_id", "comfyui_seed_node_id")
+        set_if_present("comfyui_seed_field", "comfyui_seed_field")
+        set_if_present("comfyui_timeout_sec", "comfyui_timeout_sec")
+        set_if_present("comfyui_poll_interval_sec", "comfyui_poll_interval_sec")
                 self.only_mention_in_chat = config.get("only_mention_in_chat", self.only_mention_in_chat)
                 self.chance_to_get_answer = config.get("chance_to_get_answer", self.chance_to_get_answer)
                 self.html_tag = config.get("html_tag", self.html_tag)

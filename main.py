@@ -40,6 +40,7 @@ try:
     from extensions.telegram_bot.source.extension.silero import Silero as Silero
     from extensions.telegram_bot.source.extension.chatterbox_tts import ChatterboxTTS as ChatterboxTTS
     from extensions.telegram_bot.source.extension.sd_api import SdApi as SdApi
+    from extensions.telegram_bot.source.extension.comfyui_api import ComfyUIApi as ComfyUIApi
 except ImportError:
     import source.text_process as tp
     import source.const as const
@@ -50,6 +51,7 @@ except ImportError:
     from source.extension.silero import Silero as Silero
     from source.extension.chatterbox_tts import ChatterboxTTS as ChatterboxTTS
     from source.extension.sd_api import SdApi as SdApi
+    from source.extension.comfyui_api import ComfyUIApi as ComfyUIApi
 
 
 class AiogramLlmBot:
@@ -73,8 +75,32 @@ class AiogramLlmBot:
         self.silero = Silero()
         # Chatterbox initiate
         self.chatterbox = ChatterboxTTS()
-        # SdApi initiate
-        self.SdApi = SdApi(cfg.sd_api_url, cfg.sd_config_file_path)
+        # Image generation backend initiate
+        image_backend = (cfg.image_backend or "sd_webui").strip().lower()
+        self.image_backend = image_backend
+        if image_backend == "comfyui":
+            try:
+                self.ImageApi = ComfyUIApi(
+                    url=cfg.comfyui_url,
+                    workflow_file_path=cfg.comfyui_workflow_file_path,
+                    prompt_node_id=cfg.comfyui_prompt_node_id,
+                    prompt_field=cfg.comfyui_prompt_field,
+                    negative_prompt=cfg.comfyui_negative_prompt,
+                    negative_prompt_node_id=cfg.comfyui_negative_prompt_node_id,
+                    negative_prompt_field=cfg.comfyui_negative_prompt_field,
+                    seed_node_id=cfg.comfyui_seed_node_id,
+                    seed_field=cfg.comfyui_seed_field,
+                    timeout_sec=cfg.comfyui_timeout_sec,
+                    poll_interval_sec=cfg.comfyui_poll_interval_sec,
+                )
+                logging.info("### Image backend: ComfyUI ###")
+            except Exception as exception:
+                logging.error("Image backend init failed (%s). Falling back to SD WebUI. %s", image_backend, exception)
+                self.ImageApi = SdApi(cfg.sd_api_url, cfg.sd_config_file_path)
+                self.image_backend = "sd_webui"
+        else:
+            self.ImageApi = SdApi(cfg.sd_api_url, cfg.sd_config_file_path)
+            logging.info("### Image backend: SD WebUI ###")
         # Load user rules
         if exists(cfg.user_rules_file_path):
             with open(normpath(cfg.user_rules_file_path), "r") as user_rules_file:
@@ -253,7 +279,7 @@ class AiogramLlmBot:
     async def send_sd_image(self, message, answer: str, user_text: str):
         chat_id = message.chat.id
         try:
-            file_list = await self.SdApi.get_image(answer)
+            file_list = await self.ImageApi.get_image(answer)
             answer = answer.replace(cfg.sd_api_prompt_of.replace("OBJECT", user_text[1:].strip()), "")
             for char in ["[", "]", "{", "}", "(", ")", "*", '"', "'"]:
                 answer = answer.replace(char, "")

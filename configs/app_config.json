@@ -20,6 +20,8 @@
 	"sd_api_url": "http://127.0.0.1:7860",
 	"sd_api_prompt_of": "Stable diffusion prompt described OBJECT:",
 	"sd_api_prompt_self": "Stable diffusion prompt described what user seeing right now:",
+	"image_backend": "sd_webui",
+	"comfyui_config_file_path": "configs/comfyui_config.json",
 	"html_tag": ["", ""],
 	"translate_html_tag": ["<span class=\"tg-spoiler\">", "</span>"],
 	"translate_as_hidden_text": "on",

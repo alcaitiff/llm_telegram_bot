@@ -80,7 +80,7 @@ FEATURES:
 - "++" prefix replace bot name during chat (switch conversation to another character)
 - "--" prefix replace you name during chat
 - "==" prefix to add message to context
-- "📷" prefix to make photo via SD api. Write like "📷Chiharu Yamada", not single "📷". Need to run ([StableDiffusion](https://github.com/AUTOMATIC1111/stable-diffusion-webui)) with --api key first.
+- "📷" prefix to make photo via SD WebUI or ComfyUI. Write like "📷Chiharu Yamada", not single "📷". For SD WebUI, run ([StableDiffusion](https://github.com/AUTOMATIC1111/stable-diffusion-webui)) with --api. For ComfyUI, run ComfyUI with the HTTP API enabled.
 - save/load history in chat by downloading/forwarding to chat .json file
 - integrated auto-translate (you can set model/user language parameter) 
 - receiving text files (code, text, etc)
@@ -91,9 +91,99 @@ FEATURES:
 - antiflood - one message per 15 sec from one user
 - improved group chatting mode
 
+**Images**
+Image generation is triggered by a prefix. The bot does not generate images unless a prefix is used.
+
+How to generate an image:
+1. Send a message that starts with one of `📷`, `📸`, `📹`, `🎥`, `📽`.
+2. The rest of the message becomes the image prompt.
+3. If you send only the prefix (for example `📷`), the bot uses `sd_api_prompt_self` to build a prompt.
+
+Examples:
+```text
+📷A cozy wooden cabin in a snowy forest, warm window light, cinematic
+```
+```text
+📷
+```
+
+SD WebUI (AUTOMATIC1111) setup:
+1. Run SD WebUI with `--api`.
+2. Set `image_backend` to `sd_webui`.
+3. Set `sd_api_url` to your SD WebUI URL.
+4. Tune `configs/sd_config.json` for your preferred quality and size.
+
+Complete SD WebUI config example (`configs/sd_config.json`):
+```json
+{
+	"prompt": "",
+	"steps": 30,
+	"cfg_scale": 6,
+	"width": 768,
+	"height": 768,
+	"negative_prompt": "(worst quality, low quality:1.4), jpeg artifacts, signature, watermark, interlocked fingers"
+}
+```
+
+ComfyUI setup:
+1. Run ComfyUI with the HTTP API enabled.
+2. Export your workflow in API format (ComfyUI `Save -> API`).
+3. Set `image_backend` to `comfyui`.
+4. Point `comfyui_workflow_file_path` to the exported API workflow.
+5. Set `comfyui_prompt_node_id` to the node id of your `CLIPTextEncode` prompt node.
+
+Complete ComfyUI config example (`configs/comfyui_config.json`):
+```json
+{
+	"comfyui_url": "http://127.0.0.1:8188",
+	"comfyui_workflow_file_path": "configs/comfyui_workflow.json",
+	"comfyui_prompt_node_id": "",
+	"comfyui_prompt_field": "text",
+	"comfyui_negative_prompt": "",
+	"comfyui_negative_prompt_node_id": "",
+	"comfyui_negative_prompt_field": "text",
+	"comfyui_seed_node_id": "",
+	"comfyui_seed_field": "seed",
+	"comfyui_timeout_sec": 120,
+	"comfyui_poll_interval_sec": 1.0
+}
+```
+
+Extension mode paths:
+1. SD WebUI config: `extensions/telegram_bot/configs/sd_config.json`.
+2. ComfyUI config: `extensions/telegram_bot/configs/comfyui_config.json`.
+3. ComfyUI workflow: `extensions/telegram_bot/configs/comfyui_workflow.json`.
+
+**Voice Cloning**
+Voice cloning uses Chatterbox TTS. Once a voice is set, the bot sends audio replies.
+
+You can also open the Voice menu: Options -> Voice.
+
+Quick start (default clone):
+1. Send `/voice_clone`.
+2. Upload a 5-15 second voice or audio clip.
+3. The bot will confirm the clone is active.
+
+Narrator and character voices:
+1. `/voice_narrator` to set the narrator voice.
+2. `/voice_char <Character Name>` to set a voice for a specific speaker.
+
+Examples:
+```text
+/voice_clone
+/voice_narrator
+/voice_char Alice
+/voice_char Alice --replace
+```
+
+Notes:
+1. Use `--replace` to overwrite an existing voice.
+2. You can send `voice`, `audio`, or `document` files as the reference clip.
+3. Voice references are stored under `history/voice_refs`.
+4. To disable TTS, open the Voice menu and choose `None`.
+5. You can force the TTS device by setting `TTS_DEVICE=cpu` or `TTS_DEVICE=cuda`.
 
 CONFIGURATION:
-
 `app_config.json` - config for running as standalone app (`run.sh` or `run.cmd`)  
 `ext_config.json` - config for running as extension for [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
 
@@ -166,6 +256,32 @@ x_config.json
         if "on" and model/user lang not the same - translation will be writed under spoiler. If "off" - translation without spoiler, no original text in message.
     sd_api_url="http://127.0.0.1:7860"
     stable diffusion api url, need to use "photo" prefixes
+    image_backend=sd_webui
+        image backend: sd_webui or comfyui
+    comfyui_config_file_path=configs\\comfyui_config.json
+        comfyui config file (all comfyui settings)
+    comfyui_url="http://127.0.0.1:8188"
+        comfyui api url
+    comfyui_workflow_file_path=configs\\comfyui_workflow.json
+        comfyui workflow exported in API format (Save -> API)
+    comfyui_prompt_node_id=
+        node id to inject prompt into (CLIPTextEncode). Leave empty only if your workflow has a single prompt node
+    comfyui_prompt_field=text
+        field name for prompt input
+    comfyui_negative_prompt=
+        optional negative prompt text when node is configured
+    comfyui_negative_prompt_node_id=
+        node id to inject negative prompt
+    comfyui_negative_prompt_field=text
+        field name for negative prompt input
+    comfyui_seed_node_id=
+        node id to inject random seed
+    comfyui_seed_field=seed
+        field name for seed input
+    comfyui_timeout_sec=120
+        max seconds to wait for comfyui to finish
+    comfyui_poll_interval_sec=1.0
+        comfyui polling interval while waiting for results
     proxy_url
         to avoid provider blocking
 

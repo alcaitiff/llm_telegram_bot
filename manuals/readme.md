@@ -40,7 +40,7 @@ Option buttons can be called in any moment, multiply times.
 - "+", "#" [name or situation] - change character name for next message. 
 - "++" [new name] - permanently change character name 
 - "-", "!" [corrected message] - replace last bot message on yours. If you wanna force switch conversation direction.
-- "📷","📸","📹","🎥","📽" [name or situation] - call image of something/someone. (Stable diffusion with --api should be run)
+- "📷","📸","📹","🎥","📽" [name or situation] - call image of something/someone. (SD WebUI with --api or ComfyUI API should be running)
 
 # How to maximize your conversation?
 - Use prefixes
