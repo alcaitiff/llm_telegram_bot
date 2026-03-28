@@ -17,6 +17,7 @@
 	"generator_params_file_path": "extensions/telegram_bot/configs/generator_params.json",
 	"user_rules_file_path": "extensions/telegram_bot/configs/telegram_user_rules.json",
 	"sd_config_file_path": "extensions/telegram_bot/configs/sd_config.json",
+	"chatterbox_config_file_path": "extensions/telegram_bot/configs/chatterbox_config.json",
 	"sd_api_url": "http://127.0.0.1:7860",
 	"sd_api_prompt_of": "Stable diffusion prompt described OBJECT:",
 	"sd_api_prompt_self": "Write a single image prompt that describes the current scene visually. Include specific subjects, setting, lighting, and camera/style. Do NOT include dialogue, speech, quotes, or character lines. Output only the visual description.",

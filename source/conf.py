@@ -106,6 +106,19 @@ class Config(BaseModel):
     comfyui_seed_field: str = Field(default="seed", description="")
     comfyui_timeout_sec: int = Field(default=120, description="")
     comfyui_poll_interval_sec: float = Field(default=1.0, description="")
+    chatterbox_config_file_path: str = Field(default="configs/chatterbox_config.json", description="")
+    chatterbox_settings: dict = Field(
+        default={
+            "language_id": "auto",
+            "exaggeration": 0.5,
+            "cfg_weight": 0.5,
+            "temperature": 0.8,
+            "repetition_penalty": 2.0,
+            "min_p": 0.05,
+            "top_p": 1.0,
+        },
+        description="",
+    )
     proxy_url: str = Field(default="", description="")
     # Set bot mode
     bot_mode: str = Field(default="admin", description="")
@@ -188,13 +201,17 @@ class Config(BaseModel):
                         "comfyui_negative_prompt_field", self.comfyui_negative_prompt_field
                     )
                     self.comfyui_seed_node_id = config.get("comfyui_seed_node_id", self.comfyui_seed_node_id)
-                    self.comfyui_seed_field = config.get("comfyui_seed_field", self.comfyui_seed_field)
-                    self.comfyui_timeout_sec = config.get("comfyui_timeout_sec", self.comfyui_timeout_sec)
-                    self.comfyui_poll_interval_sec = config.get(
-                        "comfyui_poll_interval_sec", self.comfyui_poll_interval_sec
-                    )
+                self.comfyui_seed_field = config.get("comfyui_seed_field", self.comfyui_seed_field)
+                self.comfyui_timeout_sec = config.get("comfyui_timeout_sec", self.comfyui_timeout_sec)
+                self.comfyui_poll_interval_sec = config.get(
+                    "comfyui_poll_interval_sec", self.comfyui_poll_interval_sec
+                )
 
                 self.load_comfyui_config()
+                self.chatterbox_config_file_path = config.get(
+                    "chatterbox_config_file_path", self.chatterbox_config_file_path
+                )
+                self.load_chatterbox_config()
                 self.only_mention_in_chat = config.get("only_mention_in_chat", self.only_mention_in_chat)
                 self.chance_to_get_answer = config.get("chance_to_get_answer", self.chance_to_get_answer)
                 self.html_tag = config.get("html_tag", self.html_tag)
@@ -231,6 +248,28 @@ class Config(BaseModel):
         set_if_present("comfyui_seed_field", "comfyui_seed_field")
         set_if_present("comfyui_timeout_sec", "comfyui_timeout_sec")
         set_if_present("comfyui_poll_interval_sec", "comfyui_poll_interval_sec")
+
+    def load_chatterbox_config(self):
+        if not exists(normpath(self.chatterbox_config_file_path)):
+            return
+        try:
+            with open(normpath(self.chatterbox_config_file_path), "r") as chatterbox_config_file:
+                chatterbox_config = json.loads(chatterbox_config_file.read())
+        except Exception as exception:
+            logging.error("Failed to load chatterbox config: %s %s", self.chatterbox_config_file_path, exception)
+            return
+
+        for key in [
+            "language_id",
+            "exaggeration",
+            "cfg_weight",
+            "temperature",
+            "repetition_penalty",
+            "min_p",
+            "top_p",
+        ]:
+            if key in chatterbox_config:
+                self.chatterbox_settings[key] = chatterbox_config[key]
 
     def load_prompt_template(self, prompt_template_path=""):
         if not prompt_template_path:

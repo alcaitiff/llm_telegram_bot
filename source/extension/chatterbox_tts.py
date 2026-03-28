@@ -19,6 +19,14 @@ try:
 except Exception:
     ChatterboxMultilingualTTS = None
 
+try:
+    from extensions.telegram_bot.source.conf import cfg as cfg
+except Exception:
+    try:
+        from source.conf import cfg as cfg
+    except Exception:
+        cfg = None
+
 if TYPE_CHECKING:
     try:
         from extensions.telegram_bot.source.user import User as User
@@ -134,9 +142,43 @@ class ChatterboxTTS:
             logging.warning("Chatterbox TTS missing voice clone reference audio.")
             return None
 
-        language_id = self._map_language(getattr(user, "language", "en"))
+        language_id_setting = None
+        if cfg is not None:
+            language_id_setting = (cfg.chatterbox_settings or {}).get("language_id")
+        if not language_id_setting or str(language_id_setting).strip().lower() == "auto":
+            language_id = self._map_language(getattr(user, "language", "en"))
+        else:
+            language_id = self._map_language(str(language_id_setting))
         if language_id not in self.supported_languages:
             language_id = "en"
+
+        def get_float_setting(key: str, default: float) -> float:
+            value = default
+            if cfg is not None:
+                raw_value = (cfg.chatterbox_settings or {}).get(key, default)
+            else:
+                raw_value = default
+            try:
+                value = float(raw_value)
+            except Exception:
+                value = default
+            return value
+
+        exaggeration = get_float_setting("exaggeration", 0.5)
+        cfg_weight = get_float_setting("cfg_weight", 0.5)
+        temperature = get_float_setting("temperature", 0.8)
+        repetition_penalty = get_float_setting("repetition_penalty", 2.0)
+        min_p = get_float_setting("min_p", 0.05)
+        top_p = get_float_setting("top_p", 1.0)
+
+        if min_p < 0:
+            min_p = 0.0
+        if min_p > 1:
+            min_p = 1.0
+        if top_p < 0:
+            top_p = 0.0
+        if top_p > 1:
+            top_p = 1.0
 
         try:
             os.makedirs(self.output_dir, exist_ok=True)
@@ -144,6 +186,12 @@ class ChatterboxTTS:
                 text=text,
                 audio_prompt_path=audio_prompt_path,
                 language_id=language_id,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+                repetition_penalty=repetition_penalty,
+                min_p=min_p,
+                top_p=top_p,
             )
             if isinstance(wav, torch.Tensor):
                 wav = wav.detach().cpu()

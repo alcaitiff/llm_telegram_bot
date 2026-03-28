@@ -197,6 +197,8 @@ class AiogramLlmBot:
         self.dp.message.register(self.thread_voice_clone_command, Command("voice_clone"))
         self.dp.message.register(self.thread_voice_narrator_command, Command("voice_narrator"))
         self.dp.message.register(self.thread_voice_character_command, Command("voice_char"))
+        self.dp.message.register(self.thread_voice_language_command, Command("voice_lang"))
+        self.dp.message.register(self.thread_voice_language_command, Command("voice_language"))
         self.dp.message.register(self.thread_get_message)
         self.dp.message.register(self.thread_get_document)
         self.dp.callback_query.register(self.thread_push_button)
@@ -721,6 +723,70 @@ class AiogramLlmBot:
         await message.reply(
             f"Voice setup for '{char_name}'. Send a short voice/audio clip (5-15 seconds)."
         )
+        return True
+
+    def _persist_chatterbox_config(self) -> bool:
+        config_path = getattr(cfg, "chatterbox_config_file_path", "")
+        if not config_path:
+            return False
+        config_path = normpath(config_path)
+        config_dir = os.path.dirname(config_path)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
+        config_data = {}
+        if exists(config_path):
+            try:
+                with open(config_path, "r") as config_file:
+                    config_data = json.loads(config_file.read())
+            except Exception as e:
+                logging.warning("Failed to read chatterbox config for update: %s", e)
+                config_data = {}
+        config_data.update(getattr(cfg, "chatterbox_settings", {}) or {})
+        try:
+            with open(config_path, "w") as config_file:
+                json.dump(config_data, config_file, indent=2)
+            return True
+        except Exception as e:
+            logging.warning("Failed to write chatterbox config: %s", e)
+            return False
+
+    async def thread_voice_language_command(self, message: types.Message):
+        chat_id = message.chat.id
+        if not utils.check_user_permission(chat_id):
+            return False
+        text = (message.text or "").strip()
+        parts = text.split(maxsplit=1)
+        current_language = (cfg.chatterbox_settings or {}).get("language_id", "auto")
+        if len(parts) < 2 or not parts[1].strip():
+            await message.reply(
+                f"Chatterbox language is '{current_language}'. "
+                "Usage: /voice_lang <language_code|auto|list>"
+            )
+            return True
+
+        desired = parts[1].strip().lower()
+        if desired in {"list", "help"}:
+            supported = ", ".join(sorted(self.chatterbox.supported_languages))
+            await message.reply(f"Supported languages: {supported}")
+            return True
+
+        if desired == "auto":
+            cfg.chatterbox_settings["language_id"] = "auto"
+            self._persist_chatterbox_config()
+            await message.reply("Chatterbox language set to auto (uses user language).")
+            return True
+
+        mapped = self.chatterbox._map_language(desired)
+        if mapped not in self.chatterbox.supported_languages:
+            supported = ", ".join(sorted(self.chatterbox.supported_languages))
+            await message.reply(
+                f"Unsupported language '{desired}'. Supported languages: {supported}"
+            )
+            return True
+
+        cfg.chatterbox_settings["language_id"] = mapped
+        self._persist_chatterbox_config()
+        await message.reply(f"Chatterbox language set to '{mapped}'.")
         return True
 
     async def thread_get_voice_reference(self, message: types.Message) -> bool:

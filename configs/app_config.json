@@ -17,6 +17,7 @@
 	"generator_params_file_path": "configs/generator_params.json",
 	"user_rules_file_path": "configs/telegram_user_rules.json",
 	"sd_config_file_path": "configs/sd_config.json",
+	"chatterbox_config_file_path": "configs/chatterbox_config.json",
 	"sd_api_url": "http://127.0.0.1:7860",
 	"sd_api_prompt_of": "Stable diffusion prompt described OBJECT:",
 	"sd_api_prompt_self": "Write a simple and short image prompt that describes the current scene visually. Include specific subjects, setting, lighting. Do NOT include dialogue, speech, quotes, or character lines. Output only the visual description.",
@@ -24,7 +25,7 @@
 	"comfyui_config_file_path": "configs/comfyui_config.json",
 	"html_tag": ["", ""],
 	"translate_html_tag": ["<span class=\"tg-spoiler\">", "</span>"],
-	"translate_as_hidden_text": "on",
+	"translate_as_hidden_text": "off",
 	"only_mention_in_chat": false,
 	"chance_to_get_answer": 1.0,
 	"proxy_url": ""
