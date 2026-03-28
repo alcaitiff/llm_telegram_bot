@@ -276,29 +276,7 @@ x_config.json
     image_backend=sd_webui
         image backend: sd_webui or comfyui
     comfyui_config_file_path=configs\\comfyui_config.json
-        comfyui config file (all comfyui settings)
-    comfyui_url="http://127.0.0.1:8188"
-        comfyui api url
-    comfyui_workflow_file_path=configs\\comfyui_workflow.json
-        comfyui workflow exported in API format (Save -> API)
-    comfyui_prompt_node_id=
-        node id to inject prompt into (CLIPTextEncode). Leave empty only if your workflow has a single prompt node
-    comfyui_prompt_field=text
-        field name for prompt input
-    comfyui_negative_prompt=
-        optional negative prompt text when node is configured
-    comfyui_negative_prompt_node_id=
-        node id to inject negative prompt
-    comfyui_negative_prompt_field=text
-        field name for negative prompt input
-    comfyui_seed_node_id=
-        node id to inject random seed
-    comfyui_seed_field=seed
-        field name for seed input
-    comfyui_timeout_sec=120
-        max seconds to wait for comfyui to finish
-    comfyui_poll_interval_sec=1.0
-        comfyui polling interval while waiting for results
+        comfyui config file (all comfyui settings live here)
     proxy_url
         to avoid provider blocking
 
@@ -308,6 +286,9 @@ generator_params.json
 
 sd_config.json
     config for stable diffusion
+
+comfyui_config.json
+    config for ComfyUI (workflow path, prompt node ids, and API settings)
 
 telegram_admins.txt
     list of users id who forced to admin mode. If telegram_users not empty - must be in telegram_users too!
