@@ -183,6 +183,23 @@ Notes:
 4. To disable TTS, open the Voice menu and choose `None`.
 5. You can force the TTS device by setting `TTS_DEVICE=cpu` or `TTS_DEVICE=cuda`.
 
+**Chatterbox TTS Settings**
+These map to Chatterbox Multilingual `generate()` parameters in the base library.
+
+- `language_id`: Language code for multilingual synthesis (for example `en`, `es`, `pt`, `zh`). Use one of the supported language codes in Chatterbox Multilingual.
+- `exaggeration`: Emotion exaggeration factor. In Chatterbox Multilingual it scales the `emotion_adv` conditioning; higher values increase expressiveness and can speed up speech. Official tips suggest raising this (around `0.7+`) for more expressive or dramatic speech.
+- `cfg_weight`: Classifier-free guidance weight. Official tips suggest lowering it (around `0.3`) to improve pacing for fast speakers and to balance higher `exaggeration`.
+- `temperature`: Sampling temperature; higher values increase randomness/variation, lower values are more consistent.
+- `repetition_penalty`: Penalty applied to repeated tokens; `1.0` means no penalty, higher values discourage repetition.
+- `min_p`: Minimum probability threshold relative to the most likely token; tokens below `min_p * max_prob` are filtered out.
+- `top_p`: Nucleus sampling threshold; keeps the smallest set of tokens whose probabilities sum to `top_p` or higher.
+
+References:
+- Chatterbox Multilingual source (supported languages and `generate()` parameters): https://github.com/resemble-ai/chatterbox/blob/master/src/chatterbox/mtl_tts.py
+- Chatterbox tuning tips (`exaggeration` and `cfg_weight`): https://github.com/resemble-ai/chatterbox#original-chatterbox-tips
+- Hugging Face generation parameter definitions (`temperature`, `top_p`, `repetition_penalty`): https://huggingface.co/docs/transformers/v4.25.1/main_classes/text_generation
+- SGLang sampling parameters (`min_p`): https://docs.sglang.io/basic_usage/sampling_params.html
+
 CONFIGURATION:
 `app_config.json` - config for running as standalone app (`run.sh` or `run.cmd`)  
 `ext_config.json` - config for running as extension for [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)

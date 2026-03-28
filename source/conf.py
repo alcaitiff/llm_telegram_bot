@@ -110,10 +110,10 @@ class Config(BaseModel):
     chatterbox_settings: dict = Field(
         default={
             "language_id": "auto",
-            "exaggeration": 0.5,
-            "cfg_weight": 0.5,
-            "temperature": 0.8,
-            "repetition_penalty": 2.0,
+            "exaggeration": 0.75,
+            "cfg_weight": 0.4,
+            "temperature": 0.9,
+            "repetition_penalty": 1.8,
             "min_p": 0.05,
             "top_p": 1.0,
         },
